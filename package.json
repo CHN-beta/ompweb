@@ -23,6 +23,7 @@
   },
   "files": [
     "bin",
+    "app/fonts/*LICENSE*",
     "lib",
     ".next",
     "!.next/cache",

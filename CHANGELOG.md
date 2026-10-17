@@ -4,6 +4,14 @@ All notable changes to **omp-web** (`@kahme247/ompweb`) are documented in this f
 
 ---
 
+## [Unreleased]
+
+### Fixes & Improvements
+
+- Build from a clean checkout without a pre-existing `next-env.d.ts`: the Nix source file set no longer includes this ignored file, which Next.js generates during the build.
+- Bundle Geist, JetBrains Mono, Noto Sans Mono, and Source Serif 4 with their OFL licenses and load them through `next/font/local`. Both npm and Nix builds use these files without Google Fonts requests or a build-time layout patch; the existing bundled CJK subset is unchanged.
+- Refresh the Nix npm dependency hash to match the current lockfile's fetched cache.
+
 ## [v0.5.2] - 2026-10-15
 
 ### Breaking changes

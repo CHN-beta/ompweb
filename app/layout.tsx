@@ -1,38 +1,39 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import Script from "next/script";
-import { Geist, JetBrains_Mono, Noto_Sans_Mono, Source_Serif_4 } from "next/font/google";
+import localFont from "next/font/local";
 import { ThemeColor } from "@/hooks/useTheme";
 import { IosFocusZoomGuard } from "@/components/IosFocusZoomGuard";
 import { SIDEBAR_HISTORY_BRIDGE_SCRIPT } from "@/lib/sidebar-history-bridge";
 import { getInstallName } from "@/lib/install-name";
 import "./globals.css";
 
-const geist = Geist({
-  subsets: ["latin"],
+const geist = localFont({
+  src: "./fonts/Geist.ttf",
+  weight: "100 900",
   variable: "--font-geist",
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const jetbrainsMono = localFont({
+  src: "./fonts/JetBrainsMono.ttf",
+  weight: "100 800",
   variable: "--font-jb-mono",
   display: "swap",
 });
 
-const notoSansMono = Noto_Sans_Mono({
-  subsets: ["latin", "cyrillic"],
+const notoSansMono = localFont({
+  src: "./fonts/NotoSansMono.ttf",
+  weight: "100 900",
   variable: "--font-noto-mono",
   display: "swap",
 });
 
 // Display serif for the warm-humanistic heading voice. Source Serif 4 covers
-// latin; CJK uses a bundled Noto Serif SC subset declared in globals.css, not
-// next/font/google: Google Fonts sometimes serves it through extensionless
-// `/l/font?kit=` URLs that next/font cannot parse, which failed builds at random.
-const sourceSerif = Source_Serif_4({
-  subsets: ["latin"],
+// Latin; CJK uses the bundled Noto Serif SC subset declared in globals.css.
+const sourceSerif = localFont({
+  src: "./fonts/SourceSerif4Variable-Roman.otf",
+  weight: "200 900",
   variable: "--font-source-serif",
   display: "swap",
 });
