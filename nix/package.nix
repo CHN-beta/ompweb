@@ -36,7 +36,7 @@ buildNpmPackage (finalAttrs: {
   pname = "ompweb";
   inherit src version;
 
-  npmDepsHash = "sha256-sWlf6K96SKtjdaX5EWwoIT28r46QM17hd/o0qW8hSyY=";
+  npmDepsHash = "sha256-jPH4bRBFHx5xOjA/sAJjnR1LoX0JuGT5678iyQ3r4zM=";
 
   # npmPackFlags = [ "--ignore-scripts" ];
 
