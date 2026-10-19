@@ -2379,6 +2379,23 @@ export function AppShell({ appName }: { appName: string }) {
             )}
             <button
               type="button"
+              className="shell-toolbar-btn ui-focus-ring"
+              onClick={() => {
+                if (rightPanelOpen && rightView === "terminal") {
+                  setRightPanelOpen(false);
+                } else {
+                  setRightView("terminal");
+                  setRightPanelOpen(true);
+                }
+              }}
+              title={t("tabBar.terminal")}
+              aria-label={t("tabBar.terminal")}
+              aria-pressed={rightPanelOpen && rightView === "terminal"}
+            >
+              <Terminal size={16} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               className="shell-toolbar-btn shell-panel-opener ui-focus-ring"
               onClick={() => {
                 // Unread notifications turn the panel toggle into their shortcut.

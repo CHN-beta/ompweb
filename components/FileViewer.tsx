@@ -11,7 +11,7 @@ import {
   vscDarkPlus,
 } from "@/lib/syntax-highlight";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
-import { AtSign, Download, WrapText } from "lucide-react";
+import { AtSign, Download, Save, WrapText } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
@@ -30,6 +30,8 @@ import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { FrontmatterCard } from "./FrontmatterCard";
+import { toast } from "./ui/toast";
+import { CodeEditor } from "./CodeEditor";
 
 interface Props {
   filePath: string;
@@ -45,15 +47,17 @@ interface FileData {
   content: string;
   language: string;
   size: number;
+  mtime?: number;
 }
 
-type DisplayMode = "source" | "preview" | "diff";
+type DisplayMode = "source" | "edit" | "preview" | "diff";
 
 /** A web or other scheme URL (`https:`, `mailto:`, protocol-relative `//host`), as opposed to a local path. */
 const EXTERNAL_URL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 const DISPLAY_MODE_LABEL_KEYS: Record<DisplayMode, string> = {
   source: "fileViewer.modeSource",
+  edit: "fileViewer.modeEdit",
   preview: "fileViewer.modePreview",
   diff: "fileViewer.modeDiff",
 };
@@ -862,6 +866,59 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const contentRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
+  const [editContent, setEditContent] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (data) {
+      setEditContent(data.content);
+    }
+  }, [data]);
+
+  const isDirty = data !== null && editContent !== data.content;
+
+  const handleSave = useCallback(async () => {
+    if (!data || saving || !isDirty) return;
+    setSaving(true);
+    try {
+      const res = await fetch(getFileApiUrl(filePath, "read", sourceSessionId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: editContent,
+          expectedMtime: data.mtime,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          toast.error(t("fileViewer.conflictError"));
+        } else {
+          toast.error(json.error || "Failed to save file");
+        }
+        return;
+      }
+      setData((prev) => prev ? { ...prev, content: editContent, size: json.size, mtime: json.mtime } : null);
+      toast.success(t("fileViewer.saved"));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [data, saving, isDirty, filePath, editContent, sourceSessionId, t]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        if (isDirty) {
+          e.preventDefault();
+          void handleSave();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleSave, isDirty]);
 
   const fetchContent = useCallback((filePath: string) => {
     // Guard against stale responses: bump the request id and ignore any
@@ -869,7 +926,14 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     // slower older request cannot overwrite newer content/error state.
     const requestId = ++contentRequestRef.current;
     return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
-      .then((r) => r.json())
+      .then(async (r) => {
+        const d = (await r.json()) as FileData & { error?: string };
+        const headerMtime = r.headers.get("x-file-mtime");
+        if (headerMtime) {
+          d.mtime = Number(headerMtime);
+        }
+        return d;
+      })
       .then((d: FileData & { error?: string }) => {
         if (requestId !== contentRequestRef.current) return null;
         if (d.error) {
@@ -1090,6 +1154,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const lines = data.content.split("\n");
   const displayModes: DisplayMode[] = [
     "source",
+    "edit",
     ...(hasPreview ? ["preview" as const] : []),
     ...(hasGitDiff ? ["diff" as const] : []),
   ];
@@ -1119,7 +1184,23 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
           {breadcrumbDir && (
             <span style={{ color: "var(--text-muted)" }}>{breadcrumbDir}</span>
           )}
-          <span className="display-serif" style={{ color: "var(--text)", fontWeight: 600, letterSpacing: "0.005em" }}>{breadcrumbFile}</span>
+          <span className="display-serif" style={{ color: "var(--text)", fontWeight: 600, letterSpacing: "0.005em" }}>
+            {breadcrumbFile}
+            {isDirty && (
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  backgroundColor: "var(--status-warning)",
+                  marginLeft: 6,
+                  verticalAlign: "middle",
+                }}
+                title="Unsaved changes"
+              />
+            )}
+          </span>
         </span>
 
         <span className="file-viewer-meta" title={metadata}>{metadata}</span>
@@ -1167,9 +1248,37 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
               })}
             </div>
           )}
+          {(displayMode === "edit" || isDirty) && (
+            <Tooltip content={`${t("fileViewer.save")} (Ctrl+S)`}>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!isDirty || saving}
+                aria-label={t("fileViewer.save")}
+                className="file-viewer-icon-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 8px",
+                  borderRadius: "var(--radius-control)",
+                  background: isDirty ? "var(--accent)" : "transparent",
+                  color: isDirty ? "#fff" : "var(--text-dim)",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  cursor: isDirty && !saving ? "pointer" : "default",
+                  opacity: !isDirty || saving ? 0.6 : 1,
+                  transition: `all var(--dur-fast) var(--ease-out-warm)`,
+                }}
+              >
+                <Save size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>{saving ? t("fileViewer.saving") : t("fileViewer.save")}</span>
+              </button>
+            </Tooltip>
+          )}
 
           <div className="file-viewer-actions">
-            {displayMode === "source" && (
+            {(displayMode === "source" || displayMode === "edit") && (
               <>
                 <Tooltip content={t("fileViewer.mentionSelectedLines")}>
                   <button
@@ -1214,7 +1323,15 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
 
       {/* Content area */}
       <div ref={contentRef} data-selection-scope="document" tabIndex={-1} className="file-viewer-content" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-        {displayMode === "diff" && hasGitDiff ? (
+        {displayMode === "edit" ? (
+          <CodeEditor
+            value={editContent}
+            onChange={setEditContent}
+            onSave={handleSave}
+            language={data.language}
+            wrapLines={wrapLines}
+          />
+        ) : displayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
         ) : isHtml && displayMode === "preview" ? (
           <iframe

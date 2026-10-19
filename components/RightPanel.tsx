@@ -26,10 +26,11 @@ import { NotificationList } from "./NotificationList";
 import { notificationHistory, useUnreadNotificationCount } from "@/lib/notification-history";
 import { WorktreesPanel } from "./WorktreesPanel";
 import type { WorktreeContext } from "./SessionSidebar-helpers";
+import { TerminalPanel } from "./TerminalPanel";
 import { useI18n } from "@/lib/i18n";
 import { getFileName } from "@/lib/file-paths";
 
-export type RightPanelView = "explorer" | "git" | "notifications" | "worktrees" | "file";
+export type RightPanelView = "explorer" | "git" | "notifications" | "worktrees" | "terminal" | "file";
 
 interface Props {
   fileTabs: Tab[];
@@ -211,6 +212,8 @@ export const RightPanel = memo(function RightPanel({
               notificationsBadge={unreadNotifications}
               worktreesSelected={rightView === "worktrees"}
               onSelectWorktrees={() => onSelectView("worktrees")}
+              terminalSelected={rightView === "terminal"}
+              onSelectTerminal={() => onSelectView("terminal")}
             />
           </div>
           {rightView === "explorer" ? (
@@ -473,6 +476,14 @@ export const RightPanel = memo(function RightPanel({
         <div id="workspace-file-panel-worktrees" role="tabpanel" aria-label={t("tabBar.worktrees")} style={{ display: rightView === "worktrees" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
           {/* Keyed by repository so a draft branch or pending confirmation never carries over to another repo. */}
           {visitedViews.has("worktrees") && <WorktreesPanel key={worktrees?.projectRoot ?? ""} ctx={worktrees} />}
+        </div>
+        <div id="workspace-file-panel-terminal" role="tabpanel" aria-label={t("tabBar.terminal")} style={{ display: rightView === "terminal" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+          {visitedViews.has("terminal") && (
+            <TerminalPanel
+              cwd={explorerCwd}
+              active={rightView === "terminal" && rightPanelOpen}
+            />
+          )}
         </div>
         {/* Keep open viewers mounted so switching tabs preserves scroll and preview state. */}
         <div id="workspace-file-panel-file" role="tabpanel" aria-label={activeFileTab?.filePath ?? t("appShell.filePanel")} style={{ display: rightView === "file" ? "block" : "none", flex: 1, minHeight: 0, overflow: "hidden" }}>

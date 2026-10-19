@@ -276,6 +276,83 @@ export async function POST(
   }
 }
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const { path: segments } = await params;
+    const allowedRoots = await getAllowedFileRoots();
+    const filePath = resolveReadFilePath(segments, allowedRoots);
+
+    const configAgentRoots = getConfigAgentRoots();
+    if (isUnderConfigRoot(filePath, configAgentRoots) && isConfigRootDeniedFile(filePath)) {
+      return NextResponse.json({ error: "Access denied", code: "access_denied" }, { status: 403 });
+    }
+
+    if (!isFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied", code: "access_denied" }, { status: 403 });
+    }
+
+    let body: { content?: unknown; expectedMtime?: unknown };
+    try {
+      body = await parseJsonWithinLimit(request, 25 * 1024 * 1024);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return NextResponse.json({ error: "Content too large", code: "content_too_large" }, { status: 413 });
+      }
+      return NextResponse.json({ error: "Invalid JSON body", code: "invalid_json" }, { status: 400 });
+    }
+
+    if (typeof body?.content !== "string") {
+      return NextResponse.json({ error: "content must be a string", code: "invalid_content" }, { status: 400 });
+    }
+
+    let existingStat: fs.Stats | null = null;
+    try {
+      existingStat = fs.statSync(filePath);
+      if (existingStat.isDirectory()) {
+        return NextResponse.json({ error: "Target is a directory", code: "target_is_directory" }, { status: 400 });
+      }
+      if (!isExistingFilePathAllowed(filePath, allowedRoots)) {
+        return NextResponse.json({ error: "Access denied", code: "access_denied" }, { status: 403 });
+      }
+      if (typeof body.expectedMtime === "number" && body.expectedMtime > 0) {
+        if (Math.abs(existingStat.mtimeMs - body.expectedMtime) > 1000) {
+          return NextResponse.json({
+            error: "File has been modified on disk by another process",
+            code: "conflict_mtime",
+            currentMtime: existingStat.mtimeMs,
+          }, { status: 409 });
+        }
+      }
+    } catch (e: unknown) {
+      const err = e as { code?: string };
+      if (err?.code !== "ENOENT") {
+        return NextResponse.json({ error: "Cannot access file", code: "file_access_error" }, { status: 500 });
+      }
+    }
+
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const tmpPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    fs.writeFileSync(tmpPath, body.content, "utf8");
+    fs.renameSync(tmpPath, filePath);
+
+    const newStat = fs.statSync(filePath);
+    return NextResponse.json({
+      success: true,
+      mtime: newStat.mtimeMs,
+      size: newStat.size,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
 function createFileBodyStream(filePath: string, range?: { start: number; end: number }): ReadableStream<Uint8Array> {
   const fileStream = fs.createReadStream(filePath, range);
   let closed = false;
@@ -503,7 +580,10 @@ export async function GET(
       }
       const content = fs.readFileSync(filePath, "utf-8");
       const language = getLanguage(filePath);
-      return NextResponse.json({ content, language, size: stat.size });
+      return NextResponse.json(
+        { content, language, size: stat.size },
+        { headers: { "X-File-Mtime": String(stat.mtimeMs) } },
+      );
     }
 
     if (type === "download") {
